@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Starfield Warp Speed</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            pointer-events: none;
+            user-select: none;
+            font-size: 1.2rem;
+            text-shadow: 0 0 15px #0ff, 0 0 30px #0ff;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 10px 20px;
+            border-radius: 30px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+            animation: pulse 2s infinite alternate;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 10px rgba(0, 255, 255, 0.2);
+            }
+
+            100% {
+                box-shadow: 0 0 20px rgba(0, 255, 255, 0.6);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">✨ Di chuột sang trái/phải để tăng tốc (O(N) rất mượt!) ✨</div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let stars = [];
+        const numStars = 1000; // Số lượng siêu lớn vì dùng O(N) phép chiếu không lag
+
+        // Tâm chiếu (tiêu điểm)
+        let centerX = canvas.width / 2;
+        let centerY = canvas.height / 2;
+
+        // Vị trí chuột để điều chỉnh tâm & vận tốc bay
+        let mouseX = centerX;
+        let mouseY = centerY;
+
+        canvas.addEventListener('mousemove', function (e) {
+            mouseX = e.x;
+            mouseY = e.y;
+        });
+
+        canvas.addEventListener('touchmove', function (e) {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        });
+
+        class Star {
+            constructor() {
+                this.reset();
+            }
+
+            // Khởi tạo/tái tạo hạt ở khoảng cách xa ngẫu nhiên hoặc tít biên
+            reset(randomZ = true) {
+                // Không gian 3D giả lập
+                this.x = (Math.random() - 0.5) * canvas.width * 2;
+                this.y = (Math.random() - 0.5) * canvas.height * 2;
+
+                // Trục Z: 0 là màn hình (mắt người nhìn), > 0 là lùi ra sau
+                this.z = randomZ ? Math.random() * canvas.width : canvas.width;
+                this.pz = this.z; // Theo dõi z trước đó để vẽ vệt sáng
+
+                // Màu ngẫu nhiên HSL rực rỡ
+                this.color = `hsl(${Math.random() * 360}, 100%, 75%)`;
+            }
+
+            update(speed) {
+                this.pz = this.z;
+                // Kéo các hạt về phía trước mắt (giảm Z)
+                this.z -= speed;
+
+                // Khi hạt vượt khỏi màn hình (về sau lưng) => tái tạo ở đằng xa
+                if (this.z < 1) {
+                    this.reset(false);
+                }
+            }
+
+            draw() {
+                // PHÉP CHIẾU THEO PHỐI CẢNH 3D: (x, y) = (x_3d / z_3d * FOV, y_3d / z_3d * FOV)
+                const fov = canvas.width;
+
+                // Chiếu vị trí hiện tại xuống 2D (chia cho độ sâu z)
+                let sx = (this.x / this.z) * fov + centerX;
+                let sy = (this.y / this.z) * fov + centerY;
+
+                // Kích thước hạt nhỏ đi khi ở xa (z lớn)
+                let r = mapRange(this.z, 0, canvas.width, 6, 0);
+
+                // Chiếu vị trí Frame trước đó để tạo hiệu ứng Warp Speed / vệt sao chổi (trail)
+                let px = (this.x / this.pz) * fov + centerX;
+                let py = (this.y / this.pz) * fov + centerY;
+
+                // Chỉ vẽ nếu hạt nẩy ra khỏi góc chiếu trên màn hình
+                ctx.beginPath();
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = r;
+                ctx.lineCap = "round";
+                ctx.moveTo(px, py);
+                ctx.lineTo(sx, sy);
+                ctx.stroke();
+            }
+        }
+
+        // Helper đổi tỷ lệ giá trị
+        function mapRange(value, a, b, c, d) {
+            value = (value - a) / (b - a);
+            return c + value * (d - c);
+        }
+
+        // Tạo mảng hạt
+        for (let i = 0; i < numStars; i++) {
+            stars.push(new Star());
+        }
+
+        function animate() {
+            // Tạo nền đen hơi trong suốt để lưu lại trail ngắn cực đẹp
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Cập nhật tâm chiếu chạy theo chuột chậm nhẹ tạo parallax (bay trong không gian 3 chiều)
+            centerX += (mouseX - centerX) * 0.05;
+            centerY += (mouseY - centerY) * 0.05;
+
+            // Tốc độ bay (warp speed) thay đổi phụ thuộc theo chiều ngang chuột
+            // Từ trái sang phải = Tốc độ tăng 
+            let speed = mapRange(mouseX, 0, canvas.width, 2, 45);
+
+            for (let i = 0; i < stars.length; i++) {
+                stars[i].update(speed);
+                stars[i].draw();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Resize màn hình -> update lại Canvas
+        window.addEventListener('resize', function () {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            centerX = canvas.width / 2;
+            centerY = canvas.height / 2;
+        });
+
+        animate(); // Bắt đầu chạy
+    </script>
+</body>
+
+</html>

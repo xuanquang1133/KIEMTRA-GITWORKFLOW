@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Vortex Wormhole</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #030008;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            pointer-events: none;
+            user-select: none;
+            font-size: 1.2rem;
+            text-shadow: 0 0 10px #f0f, 0 0 20px #80f;
+            background: rgba(10, 0, 20, 0.6);
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 0, 255, 0.4);
+            box-shadow: 0 0 15px rgba(128, 0, 255, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <div id="info">🌌 Lỗ đen không gian - Rê chuột lên xuống để đổi chiều xoắn 🌀</div>
+    <canvas id="canvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let particles = [];
+        const numParticles = 1200; // Vẫn dùng O(N) nên số lượng hạt cực lớn không lo lag!
+
+        let centerX = canvas.width / 2;
+        let centerY = canvas.height / 2;
+
+        let mouseX = centerX;
+        let mouseY = centerY;
+
+        canvas.addEventListener('mousemove', function (e) {
+            mouseX = e.x;
+            mouseY = e.y;
+        });
+
+        canvas.addEventListener('touchmove', function (e) {
+            mouseX = e.touches[0].clientX;
+            mouseY = e.touches[0].clientY;
+        });
+
+        class VortexParticle {
+            constructor() {
+                this.reset(true);
+            }
+
+            reset(randomZ = true) {
+                // Tọa độ cực (polar coordinates) để tạo hình ống trụ
+                this.angle = Math.random() * Math.PI * 2;
+
+                // Bán kính ống trụ - làm cho ống có các lớp ở độ xa gần khác nhau từ tâm
+                this.radius = 150 + Math.random() * 600;
+
+                // Trục Z độ sâu
+                this.z = randomZ ? Math.random() * 2000 : 2000;
+
+                // Lưu lại trạng thái cũ để vẽ vệt sáng mượt
+                this.pz = this.z;
+                this.pAngle = this.angle;
+
+                // Màu sắc phụ thuộc vào khoảng cách ra xa tâm, chuyển từ Hồng -> Tím -> Xanh lam
+                let hue = (this.radius - 150) / 600 * 120 + 260; // Dải màu Cyberpunk
+                this.color = `hsl(${hue}, 100%, 65%)`;
+
+                // Tốc độ xoắn của riêng từng hạt
+                this.twistOffset = (Math.random() - 0.5) * 0.02;
+            }
+
+            update(baseSpeed, baseTwist) {
+                this.pz = this.z;
+                this.pAngle = this.angle;
+
+                // Kéo hạt lại gần mắt
+                this.z -= baseSpeed;
+
+                // Xoắn ống trụ theo vòng tròn
+                this.angle += baseTwist + this.twistOffset;
+
+                // Reset khi vượt qua cạnh màn hình
+                if (this.z < 1) {
+                    this.reset(false);
+                }
+            }
+
+            draw() {
+                // Tọa độ 3D thực (x, y hình trụ)
+                let x3d = Math.cos(this.angle) * this.radius;
+                let y3d = Math.sin(this.angle) * this.radius;
+
+                let px3d = Math.cos(this.pAngle) * this.radius;
+                let py3d = Math.sin(this.pAngle) * this.radius;
+
+                // Phép chiếu 3D -> 2D
+                let fov = 600; // Góc nhìn
+
+                let sx = (x3d / this.z) * fov + centerX;
+                let sy = (y3d / this.z) * fov + centerY;
+
+                let spx = (px3d / this.pz) * fov + centerX;
+                let spy = (py3d / this.pz) * fov + centerY;
+
+                // Độ dày của nét vẽ (càng gần càng to)
+                let lineWidth = Math.max(0.5, 2000 / this.z);
+
+                // Nếu nét nối bị tạt ngang qua màn hình (do vượt 360 độ), bỏ qua không vẽ tránh bị sọc kẻ ngang
+                if (Math.abs(sx - spx) > canvas.width / 2) return;
+
+                ctx.beginPath();
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = lineWidth * 1.5;
+                ctx.lineCap = "round";
+                ctx.moveTo(spx, spy);
+                ctx.lineTo(sx, sy);
+                ctx.stroke();
+            }
+        }
+
+        // Tạo danh sách các hạt
+        for (let i = 0; i < numParticles; i++) {
+            particles.push(new VortexParticle());
+        }
+
+        function mapRange(value, a, b, c, d) {
+            value = (value - a) / (b - a);
+            return c + value * (d - c);
+        }
+
+        function animate() {
+            // Hiệu ứng mờ để lại đuôi (trail) cực đẹp
+            ctx.fillStyle = 'rgba(3, 0, 8, 0.25)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Xoay nhẹ góc nhìn theo chuột
+            centerX += (mouseX - centerX) * 0.03;
+            centerY += (mouseY - centerY) * 0.03;
+
+            // Tốc độ bay tới (Speed) và độ lốc xoáy (Twist)
+            // Trục X đổi tốc độ bay, Trục Y đổi độ xoắn của đường hầm
+            let speed = mapRange(mouseX, 0, canvas.width, 5, 30);
+            let twist = mapRange(mouseY, 0, canvas.height, -0.1, 0.1);
+
+            // Vẽ trung tâm sâu thẳm bằng sương mù
+            let gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 300);
+            gradient.addColorStop(0, 'rgba(255, 0, 255, 0.1)');
+            gradient.addColorStop(0.5, 'rgba(10, 0, 20, 0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update(speed, twist);
+                particles[i].draw();
+            }
+
+            requestAnimationFrame(animate);
+        }
+
+        // Cập nhật lại canvas khi màn hình thay đổi kích thước
+        window.addEventListener('resize', function () {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            centerX = canvas.width / 2;
+            centerY = canvas.height / 2;
+        });
+
+        animate();
+    </script>
+</body>
+
+</html>
